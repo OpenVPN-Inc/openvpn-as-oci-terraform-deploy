@@ -1,0 +1,440 @@
+# Oracle Cloud Marketplace / Resource Manager UI definition.
+#
+# Mandatory for a Marketplace stack artifact and must sit in the ZIP ROOT.
+# Every variable declared here must exist in the Terraform configuration, and the
+# declared type must match the Terraform type.
+#
+# ONE schema serves both build channels (see deployment_mode.tf), so the
+# customer-facing text below must stay accurate for the Ubuntu install path and
+# the Marketplace image path alike - do not mention either one specifically.
+#
+# TODO before publishing: add the `source` block (type: marketplace,
+# reference: <listing application id>) once the stack listing exists.
+
+title: OpenVPN Access Server
+description: Self-hosted business VPN and Zero Trust Network Access from the creators of OpenVPN
+logoUrl: https://as-stable-public.s3.eu-central-1.amazonaws.com/marketplaces/oci/logo.png
+stackDescription: OpenVPN Access Server on a single Compute instance
+schemaVersion: 1.1.0
+version: "3.2.2"
+locale: "en"
+
+informationalText: >-
+  This stack deploys OpenVPN Access Server onto a single Compute instance and configures it at
+  first boot. The generated admin password is shown in the stack outputs.
+
+instructions: >-
+  Open the Admin Web UI from the button above, sign in with the credentials shown in the outputs,
+  change the password, and accept the End User License Agreement. Access Server requires a
+  subscription or license key for more than two simultaneous VPN connections.
+
+variableGroups:
+  - title: "Hidden"
+    visible: false
+    variables:
+      - tenancy_ocid
+      - region
+      - deployment_mode
+      - as_version
+      - mp_subscription_enabled
+      - mp_listing_id
+      - mp_listing_resource_id
+      - marketplace_source_images
+
+  - title: "General"
+    variables:
+      - compartment_ocid
+      - prefix
+      - availability_domain
+
+  - title: "Instance"
+    variables:
+      - shape
+      - flex_ocpus
+      - flex_memory_in_gbs
+      - boot_volume_size_in_gbs
+      - ssh_authorized_key
+
+  - title: "Networking"
+    variables:
+      - create_vcn
+      - vcn_cidr
+      - subnet_cidr
+      - existing_vcn_id
+      - existing_subnet_id
+      - use_static_public_ip
+
+  - title: "Access rules"
+    variables:
+      - enable_tcp_943
+      - tcp_943_source_cidr
+      - enable_tcp_443
+      - tcp_443_source_cidr
+      - enable_udp_1194
+      - udp_1194_source_cidr
+      - enable_tcp_22
+      - tcp_22_source_cidr
+
+  - title: "Access Server"
+    variables:
+      - admin_user
+      - admin_password
+      - enable_letsencrypt
+
+variables:
+
+  # ---- hidden: populated by Resource Manager ----
+  tenancy_ocid:
+    type: string
+    title: Tenancy OCID
+    description: The OCID of the tenancy. Populated automatically by Resource Manager.
+    required: true
+
+  region:
+    type: oci:identity:region:name
+    title: Region
+    description: The region in which to create all resources. Populated automatically.
+    required: true
+
+  # Build-time switch set by packaging/build-orm.sh. Deliberately carries no
+  # 'default' here: Resource Manager must fall through to the Terraform default
+  # in deployment_mode.tf, which is the value the packaging step rewrites.
+  deployment_mode:
+    type: string
+    title: Deployment mode
+    description: Which deployment path this stack build uses.
+    required: false
+
+  # Build-time constant, not a customer knob: on the marketplace path the image
+  # is pinned to one Access Server version, so an arbitrary value here would
+  # disagree with it. Kept hidden for that reason.
+  as_version:
+    type: string
+    title: Access Server version
+    description: OpenVPN Access Server version this stack build targets.
+    required: false
+
+  # ---- hidden: Marketplace image references ----
+  mp_subscription_enabled:
+    type: boolean
+    title: Subscribe to the Marketplace image
+    description: Accept the image terms and create the app catalog subscription.
+    default: true
+    required: true
+
+  mp_listing_id:
+    type: string
+    title: Marketplace listing OCID
+    description: OCID of the app catalog listing for the OpenVPN Access Server image.
+    required: true
+
+  mp_listing_resource_id:
+    type: oci:core:image:id
+    title: Marketplace image OCID
+    description: OCID of the Marketplace image for this region.
+    required: true
+    dependsOn:
+      compartmentId: compartment_ocid
+
+
+  # ---- general ----
+  compartment_ocid:
+    type: oci:identity:compartment:id
+    title: Compartment
+    description: The compartment in which to create all resources.
+    required: true
+
+  prefix:
+    type: string
+    title: Resource name prefix
+    description: Prefix applied to the display name of every resource this stack creates.
+    default: "openvpn-as"
+    required: true
+    minLength: 1
+    maxLength: 32
+    pattern: "^[a-zA-Z][a-zA-Z0-9-]*$"
+
+  availability_domain:
+    type: oci:identity:availabilitydomain:name
+    title: Availability domain
+    description: The availability domain to place the instance in.
+    required: true
+    dependsOn:
+      compartmentId: compartment_ocid
+
+  # ---- instance ----
+  shape:
+    type: oci:core:instanceshape:name
+    title: Shape
+    description: The compute shape for the Access Server instance.
+    default: "VM.Standard.E5.Flex"
+    required: true
+    dependsOn:
+      compartmentId: compartment_ocid
+      imageId: mp_listing_resource_id
+
+  flex_ocpus:
+    type: integer
+    title: OCPUs
+    description: Number of OCPUs. Applies to flexible shapes only.
+    default: 2
+    minimum: 1
+    maximum: 64
+    required: true
+    visible:
+      or:
+        - eq: [shape, "VM.Standard.E5.Flex"]
+        - eq: [shape, "VM.Standard.E4.Flex"]
+        - eq: [shape, "VM.Standard.E3.Flex"]
+        - eq: [shape, "VM.Standard3.Flex"]
+        - eq: [shape, "VM.Standard.A1.Flex"]
+        - eq: [shape, "VM.Optimized3.Flex"]
+
+  flex_memory_in_gbs:
+    type: integer
+    title: Memory (GB)
+    description: Amount of memory in GB. Applies to flexible shapes only.
+    default: 16
+    minimum: 1
+    maximum: 1024
+    required: true
+    visible:
+      or:
+        - eq: [shape, "VM.Standard.E5.Flex"]
+        - eq: [shape, "VM.Standard.E4.Flex"]
+        - eq: [shape, "VM.Standard.E3.Flex"]
+        - eq: [shape, "VM.Standard3.Flex"]
+        - eq: [shape, "VM.Standard.A1.Flex"]
+        - eq: [shape, "VM.Optimized3.Flex"]
+
+  boot_volume_size_in_gbs:
+    type: integer
+    title: Boot volume size (GB)
+    description: Size of the boot volume in GB. Minimum 50.
+    default: 50
+    minimum: 50
+    maximum: 32768
+    required: true
+
+  ssh_authorized_key:
+    type: oci:core:ssh:publickey
+    title: SSH public key
+    description: Public SSH key used to access the instance over SSH.
+    required: true
+
+  # ---- networking ----
+  create_vcn:
+    type: boolean
+    title: Create a new VCN
+    description: >-
+      Create a new VCN, internet gateway, route table and public subnet. Leave this clear to
+      deploy into an existing VCN and subnet instead.
+    default: false
+    required: true
+
+  vcn_cidr:
+    type: string
+    title: VCN CIDR block
+    description: IPv4 CIDR block for the new VCN.
+    default: "10.0.0.0/16"
+    required: true
+    pattern: "^(\\d{1,3}\\.){3}\\d{1,3}\\/\\d{1,2}$"
+    visible: create_vcn
+
+  subnet_cidr:
+    type: string
+    title: Subnet CIDR block
+    description: IPv4 CIDR block for the new public subnet. Must be inside the VCN CIDR block.
+    default: "10.0.0.0/24"
+    required: true
+    pattern: "^(\\d{1,3}\\.){3}\\d{1,3}\\/\\d{1,2}$"
+    visible: create_vcn
+
+  existing_vcn_id:
+    type: oci:core:vcn:id
+    title: Existing VCN
+    description: The VCN to deploy into.
+    required: true
+    dependsOn:
+      compartmentId: compartment_ocid
+    visible:
+      not:
+        - create_vcn
+
+  existing_subnet_id:
+    type: oci:core:subnet:id
+    title: Existing subnet
+    description: >-
+      The subnet to attach the instance to. Must be a public subnet for the VPN to be reachable
+      from the internet.
+    required: true
+    dependsOn:
+      compartmentId: compartment_ocid
+      vcnId: existing_vcn_id
+      hidePublicSubnet: false
+      hidePrivateSubnet: false
+      hideRegionalSubnet: false
+      hideAdSubnet: false
+    visible:
+      not:
+        - create_vcn
+
+  use_static_public_ip:
+    type: boolean
+    title: Use a static (RESERVED) public IP
+    description: >-
+      Allocate a static RESERVED public IP for the Access Server. Recommended: OCI's dynamic
+      ephemeral public IP is released and reassigned across instance stop/start cycles, which
+      breaks the Let's Encrypt certificate and any DNS records pointed at the old address.
+    default: true
+
+  # ---- access rules ----
+  enable_tcp_943:
+    type: boolean
+    title: Allow TCP 943 (Admin and Client Web UI)
+    description: Required to reach the Admin Web UI and the client web portal.
+    default: true
+
+  tcp_943_source_cidr:
+    type: string
+    title: TCP 943 source CIDR
+    description: Source IP range permitted to reach TCP port 943.
+    default: "0.0.0.0/0"
+    required: true
+    pattern: "^(\\d{1,3}\\.){3}\\d{1,3}\\/\\d{1,2}$"
+    visible: enable_tcp_943
+
+  enable_tcp_443:
+    type: boolean
+    title: Allow TCP 443 (VPN over TCP)
+    description: >-
+      Required for VPN connections over TCP, and required by Let's Encrypt to validate the
+      instance.
+    default: true
+
+  tcp_443_source_cidr:
+    type: string
+    title: TCP 443 source CIDR
+    description: Source IP range permitted to reach TCP port 443.
+    default: "0.0.0.0/0"
+    required: true
+    pattern: "^(\\d{1,3}\\.){3}\\d{1,3}\\/\\d{1,2}$"
+    visible: enable_tcp_443
+
+  enable_udp_1194:
+    type: boolean
+    title: Allow UDP 1194 (VPN over UDP)
+    description: The preferred VPN transport. Faster than TCP for most workloads.
+    default: true
+
+  udp_1194_source_cidr:
+    type: string
+    title: UDP 1194 source CIDR
+    description: Source IP range permitted to reach UDP port 1194.
+    default: "0.0.0.0/0"
+    required: true
+    pattern: "^(\\d{1,3}\\.){3}\\d{1,3}\\/\\d{1,2}$"
+    visible: enable_udp_1194
+
+  enable_tcp_22:
+    type: boolean
+    title: Allow TCP 22 (SSH)
+    description: SSH access to the instance.
+    default: true
+
+  tcp_22_source_cidr:
+    type: string
+    title: TCP 22 source CIDR
+    description: >-
+      Source IP range permitted to reach TCP port 22. Restricting this to your administrator's IP
+      address is strongly recommended.
+    default: "0.0.0.0/0"
+    required: true
+    pattern: "^(\\d{1,3}\\.){3}\\d{1,3}\\/\\d{1,2}$"
+    visible: enable_tcp_22
+
+  # ---- access server ----
+  admin_user:
+    type: string
+    title: Admin username
+    description: Username for the Access Server Admin Web UI.
+    default: "openvpn"
+    required: true
+    minLength: 1
+    maxLength: 64
+
+  admin_password:
+    type: password
+    title: Admin password
+    description: >-
+      Password for the Admin Web UI. Leave blank to have a random password generated and shown in
+      the stack outputs.
+    required: false
+    confirmation: true
+    # No minLength: Resource Manager enforces it even on a blank value despite
+    # required: false, which blocks the documented "leave blank to generate a
+    # random password" behavior above. Terraform's own admin_password variable
+    # has no length constraint either, so this isn't relaxing anything real.
+    maxLength: 64
+
+  enable_letsencrypt:
+    type: boolean
+    title: Request a Let's Encrypt certificate
+    description: >-
+      Request a trusted TLS certificate for the instance's public IP address. Requires TCP 443 to
+      remain open and reachable from the internet. If disabled or unsuccessful, Access Server falls
+      back to a self-signed certificate and browsers will show a warning.
+    default: true
+
+outputGroups:
+  - title: "Access Server"
+    outputs:
+      - admin_url_text
+      - admin_user
+      - admin_password
+  - title: "Instance"
+    outputs:
+      - public_ip
+      - instance_id
+
+outputs:
+  # Drives the Primary Action button; Resource Manager pulls this out of the
+  # regular Application Outputs list and shows it only as that button, which
+  # is why admin_url_text (below) exists as its plain-text twin for the list.
+  admin_url:
+    type: link
+    title: Admin Web UI
+    displayText: Open Admin Web UI
+    visible: true
+
+  admin_url_text:
+    type: copyableString
+    title: Admin Web UI
+
+  # Still a real Terraform/CLI output; just not surfaced in the Console UI,
+  # since the Admin Web UI is the one users should open first (sign in,
+  # change the password, accept the EULA - see the README).
+  site_url:
+    type: link
+    title: Client Web Portal
+    displayText: Open Client Web Portal
+    visible: false
+
+  admin_user:
+    type: string
+    title: Admin username
+
+  admin_password:
+    type: string
+    title: Admin password
+    sensitive: true
+
+  public_ip:
+    type: copyableString
+    title: Public IP address (static or ephemeral)
+
+  instance_id:
+    type: ocid
+    title: Instance OCID
+
+primaryOutputButton: admin_url

@@ -1,0 +1,135 @@
+#cloud-config
+# One script serves both deployment paths. Which one runs is decided at boot by
+# probing for /usr/bin/ovpn-init, which exists only on the pre-built OpenVPN
+# Access Server Marketplace image:
+#
+#   present -> Access Server is already installed; just initialize it.
+#   absent  -> stock Ubuntu; install Access Server from packages.openvpn.net.
+#
+# The probe rather than a Terraform variable keeps this a single file, and means
+# the rendered user_data is correct even if deployment_mode and the chosen image
+# were ever to disagree. Note the consequence: on the Marketplace path the
+# installer branch below is present in the file but never executes, so nothing
+# is downloaded at deploy time.
+runcmd:
+  - |
+    # as.conf is created by ovpn-init (and by the installer, which runs it), so
+    # its absence is what "not yet initialized" means. Guards against re-runs.
+    if [ -f /usr/local/openvpn_as/etc/as.conf ]; then
+        exit 0
+    fi
+
+    # Oracle's Ubuntu-based images ship a host-level iptables/nftables ruleset
+    # (see /etc/iptables/rules.v4) that, by default, only allows inbound SSH and
+    # rejects everything else - defense in depth on top of the NSG. Whichever
+    # branch runs below, Access Server creates its own separate nftables tables
+    # to manage the VPN ports (943/443/1194) and NATs 443/1194 to its internal
+    # daemon ports in PREROUTING, which runs before this host ruleset's
+    # INPUT/FORWARD chains ever see the original port - so poking holes for
+    # 443/943/1194 specifically here would not work anyway. The NSG (configured
+    # by this module's enable_tcp_*/enable_udp_* variables) and Access Server's
+    # own firewall, created fresh on every service start, are already the real
+    # gatekeepers, so just clear Oracle's default ruleset rather than trying to
+    # mirror its internal NAT targets.
+    nft flush ruleset
+    netfilter-persistent save
+
+    if [ -x /usr/bin/ovpn-init ]; then
+        echo "Access Server is already installed; initializing it in place."
+        /usr/bin/ovpn-init --oracle --batch
+    else
+        echo "Access Server is not installed; installing from packages.openvpn.net."
+
+        # cloud-init's apt module rewrites the package mirror to OCI's regional
+        # one (e.g. iad-ad-1.clouds.archive.ubuntu.com) based on instance
+        # metadata, and DNS/networking can still be settling in the first
+        # moments after boot. Wait for that rewrite before installing anything,
+        # rather than racing it and failing outbound package/installer fetches.
+        for i in $(seq 1 120); do
+            grep -q '\.clouds\.archive\.ubuntu\.com' /etc/apt/sources.list.d/ubuntu.sources 2>/dev/null && break
+            sleep 1
+        done
+
+        # curl is not present on the Ubuntu Minimal image and is needed to fetch
+        # the installer. Installed here rather than via a top-level cloud-config
+        # 'packages:' key so that the Marketplace path, which returns above,
+        # performs no package fetch of any kind at deploy time.
+        apt-get update -qq
+        apt-get install -y curl
+
+        echo unattended-upgrades unattended-upgrades/enable_auto_updates boolean true | debconf-set-selections
+        dpkg-reconfigure -f noninteractive unattended-upgrades
+
+        bash -c 'bash <(curl -fsS https://packages.openvpn.net/as/install.sh) --yes --as-version=${as_version}'
+        apt-mark hold openvpn-as
+
+        . /usr/local/openvpn_as/etc/VERSION
+        printf '%s\n' "OpenVPN Access Server Appliance $AS_VERSION \n \l" > /etc/issue
+        # printf rather than a heredoc: an unquoted heredoc terminator must sit
+        # at column zero, which it cannot do inside this indented if-branch.
+        printf '#!/bin/sh\necho "Welcome to OpenVPN Access Server Appliance %s"\n' "$AS_VERSION" > /etc/update-motd.d/00-header
+    fi
+
+    SACLI="/usr/local/openvpn_as/scripts/sacli"
+
+    for i in $(seq 1 60); do
+        status="$("$SACLI" status 2>/dev/null)"
+        echo "$status" | grep -q '"api": "on"' && break
+        sleep 1
+    done
+
+    # OCI's IMDS (169.254.169.254/opc/v2/vnics/) only reports a "publicIp"
+    # field for a RESERVED public IP - it stays absent for an ephemeral one
+    # even though the instance is genuinely reachable on it, so it can't be
+    # used as a reliable source here for both use_static_public_ip paths.
+    # "sacli IP" asks Access Server itself, which works for either case.
+    # A RESERVED public IP is also attached by Terraform AFTER the instance
+    # is created, so at first boot Access Server may not see it yet. Poll
+    # for up to 5 minutes rather than reading once and giving up, otherwise
+    # host.name stays unset and Let's Encrypt is silently skipped.
+    PUBLIC_IP=""
+    PUBLIC_IP_VALID=false
+    for i in $(seq 1 60); do
+        PUBLIC_IP="$("$SACLI" IP 2>/dev/null)"
+        if printf '%s' "$PUBLIC_IP" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
+            PUBLIC_IP_VALID=true
+            break
+        fi
+        sleep 5
+    done
+
+    if $PUBLIC_IP_VALID; then
+        "$SACLI" --key "host.name" --value "$PUBLIC_IP" ConfigPut
+    else
+        echo "Warning: 'sacli IP' did not return a usable IPv4 address ('$PUBLIC_IP'); leaving host.name unset."
+    fi
+    "$SACLI" --user "${admin_user}" --new_pass "${admin_password}" SetLocalPassword
+    "$SACLI" --key "dnsproxy.mode" --value "always" ConfigPut
+    "$SACLI" --key "vpn.client.routing.reroute_dns" --value "true" ConfigPut
+    "$SACLI" --key "vpn.client.routing.reroute_gw" --value "true" ConfigPut
+
+    %{ if enable_letsencrypt ~}
+    if $PUBLIC_IP_VALID; then
+        "$SACLI" --key "acme.ip_addresses.0" --value "$PUBLIC_IP" ConfigPut
+        "$SACLI" --key "acme.cert_profile" --value "shortlived" ConfigPut
+    else
+        echo "Let's Encrypt: no usable public IPv4 detected; skipping (self-signed certificate remains)."
+    fi
+    %{ endif ~}
+
+    "$SACLI" start
+
+    %{ if enable_letsencrypt ~}
+    if $PUBLIC_IP_VALID; then
+        echo y | "$SACLI" AcmeRegisterAccount >/dev/null
+        "$SACLI" AcmeRequestCertificate
+
+        CERT_PEM="$("$SACLI" ConfigQuery 2>/dev/null | grep cs.cert | cut -d '"' -f 4 | sed 's/\\n/\n/g')"
+        if printf '%s' "$CERT_PEM" | openssl x509 -noout -issuer 2>/dev/null | grep -q "Let's Encrypt" \
+          && printf '%s' "$CERT_PEM" | openssl x509 -noout -ext subjectAltName 2>/dev/null | grep -q "IP Address:$${PUBLIC_IP}"; then
+            echo "Access Server is configured with a Let's Encrypt certificate for $${PUBLIC_IP}."
+        else
+            echo "Let's Encrypt certificate request completed, but verification failed; self-signed certificate may still be active."
+        fi
+    fi
+    %{ endif ~}
