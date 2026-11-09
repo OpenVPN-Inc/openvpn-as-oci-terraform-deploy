@@ -1,5 +1,5 @@
 # Replication manifest expected by Oracle Marketplace tooling. Values are for
-# package AS_3.2.2, same image as var.mp_listing_resource_id. compatible_shapes
+# package AS_3.2.3, same image as var.mp_listing_resource_id. compatible_shapes
 # comes from `oci compute image-shape-compatibility-entry list`. Ignore the
 # listing's own "compatible-architectures: ARM" metadata, it is wrong.
 variable "marketplace_source_images" {
@@ -10,7 +10,7 @@ variable "marketplace_source_images" {
   }))
   default = {
     main_mktpl_image = {
-      ocid                  = "ocid1.image.oc1..aaaaaaaafdxlagrh5bnitzcdvk5cc5y44v5i5eusewbp7diufvnnicys74pa"
+      ocid                  = "ocid1.image.oc1..aaaaaaaas2xmsefphlbk2lg37qpacrvwhw77iksq7ibtc3sp7qpkw37ipqeq"
       is_pricing_associated = false
       compatible_shapes = [
         "VM.DenseIO.E4.Flex",
@@ -28,6 +28,7 @@ variable "marketplace_source_images" {
         "VM.Optimized3.Flex",
         "VM.Standard.A1.Flex",
         "VM.Standard.A2.Flex",
+        "VM.Standard.A4.Ax.Flex",
         "VM.Standard.A4.Flex",
         "VM.Standard.AMD.Generic",
         "VM.Standard.Ampere.Generic",
@@ -75,6 +76,7 @@ variable "marketplace_source_images" {
         "BM.Standard.E6.Ax.192",
         "BM.DenseIO.E6.Ax.192",
         "BM.Standard.E6.256",
+        "BM.Standard4.Ax.120",
         "BM.Standard1.36",
         "BM.Standard.B1.44",
         "BM.Standard2.52",

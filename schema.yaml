@@ -16,7 +16,7 @@ description: Self-hosted business VPN and Zero Trust Network Access from the cre
 logoUrl: https://as-stable-public.s3.eu-central-1.amazonaws.com/marketplaces/oci/logo.png
 stackDescription: OpenVPN Access Server on a single Compute instance
 schemaVersion: 1.1.0
-version: "3.2.2"
+version: "3.2.3"
 locale: "en"
 
 informationalText: >-
