@@ -13,11 +13,16 @@ The Terraform module lives at the **repository root**. A single variable, `deplo
 
 Everything else - networking, security rules, public IP handling, admin credentials, Let's Encrypt, and all outputs - is identical across both paths.
 
-`deployment_mode` selects the image and decides whether the app-catalog subscription resources are created. It does **not** branch the cloud-init script: `scripts/cloud-config.yaml` is a single file that picks its path at boot by probing for `/usr/bin/ovpn-init`, which exists only on the Marketplace image. Present means "already installed, just initialize"; absent means "stock Ubuntu, install it".
+`deployment_mode` selects the image, decides whether the app-catalog subscription resources are created, and selects the cloud-init script (`local.cloud_config_file`):
+
+- `ubuntu` uses `scripts/cloud-config-ubuntu.yaml`. It installs Access Server from packages.openvpn.net, then configures it.
+- `marketplace` uses `scripts/cloud-config-marketplace.yaml`. Access Server is already on the image, so it only runs `ovpn-init` and configures it. It downloads nothing.
+
+The packaging script ships only the script for its mode, so the Marketplace zip never contains the installer. Both scripts share the same `sacli` configuration section; change them together (`tools/check-schema-drift.py` checks this).
 
 ### Access Server version
 
-`var.as_version` (default `3.2.3`) is the single source of truth. It feeds the installer's `--as-version` flag on the ubuntu path, and `local.mp_listing_resource_version` derives the `AS_<version>` Marketplace package name from it.
+`var.as_version` (default `3.2.4`) is the single source of truth. It feeds the installer's `--as-version` flag on the ubuntu path, and `local.mp_listing_resource_version` derives the `AS_<version>` Marketplace package name from it.
 
 Two things it does **not** update automatically, both of which must be changed by hand when bumping it:
 

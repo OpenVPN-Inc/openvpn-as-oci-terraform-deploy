@@ -1,0 +1,114 @@
+#cloud-config
+# deployment_type=iac
+# Marketplace path: must not download or install anything. Access Server is
+# already on the image; this script only initializes and configures it.
+runcmd:
+  - |
+    # Already initialized.
+    if [ -f /usr/local/openvpn_as/etc/as.conf ]; then
+        exit 0
+    fi
+
+    # Oracle's default host firewall would block the VPN ports.
+    #nft flush ruleset
+    #systemctl disable netfilter-persistent
+
+    # Wait for the network.
+    for i in $(seq 1 60); do
+        systemctl is-active --quiet network-online.target && break
+        sleep 2
+    done
+    echo "network-online.target is $(systemctl is-active network-online.target) after $((i * 2)) seconds at most"
+    for i in $(seq 1 60); do
+        ip -4 route show default | grep -q . && break
+        sleep 2
+    done
+    echo "default route: $(ip -4 route show default | head -n1)"
+
+    /usr/bin/ovpn-init --oracle --batch
+
+    SACLI="/usr/local/openvpn_as/scripts/sacli"
+
+    # Wait up to 60s for the API to be on. Optional $1: extra pattern that must also match.
+    wait_for_as() {
+        local status
+        for _ in $(seq 1 60); do
+            status=$("$SACLI" status 2>/dev/null)
+            if echo "$status" | grep -q '"api": "on"' && { [ -z "$1" ] || echo "$status" | grep -q "$1"; }; then
+                return
+            fi
+            sleep 1
+        done
+    }
+
+    wait_for_as
+
+    # A reserved public IP is attached after boot, so poll for it.
+    PUBLIC_IP=""
+    PUBLIC_IP_VALID=false
+    for i in $(seq 1 60); do
+        PUBLIC_IP="$("$SACLI" IP 2>/dev/null)"
+        if printf '%s' "$PUBLIC_IP" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
+            PUBLIC_IP_VALID=true
+            break
+        fi
+        sleep 5
+    done
+
+    if $PUBLIC_IP_VALID; then
+        "$SACLI" --key "host.name" --value "$PUBLIC_IP" ConfigPut
+    else
+        echo "Warning: 'sacli IP' did not return a usable IPv4 address ('$PUBLIC_IP'); leaving host.name unset."
+    fi
+    "$SACLI" --user "${admin_user}" --new_pass "${admin_password}" SetLocalPassword
+    "$SACLI" --key "dnsproxy.mode" --value "always" ConfigPut
+
+    %{ if enable_letsencrypt ~}
+    if $PUBLIC_IP_VALID; then
+        "$SACLI" --key "acme.ip_addresses.0" --value "$PUBLIC_IP" ConfigPut
+        "$SACLI" --key "acme.cert_profile" --value "shortlived" ConfigPut
+    else
+        echo "Let's Encrypt: no usable public IPv4 detected; skipping (self-signed certificate remains)."
+    fi
+    %{ endif ~}
+
+    "$SACLI" start
+
+    wait_for_as
+
+    %{ if enable_letsencrypt ~}
+    if $PUBLIC_IP_VALID; then
+        # Right after boot DNS can return only an IPv6 address (Errno 101), so wait and retry.
+        acme_reachable() {
+            timeout 3 bash -c 'exec 3<>/dev/tcp/acme-v02.api.letsencrypt.org/443' 2>/dev/null
+        }
+        for i in $(seq 1 12); do
+            acme_reachable && break
+            sleep 5
+        done
+
+        ACME_OK=false
+        for i in $(seq 1 5); do
+            echo y | "$SACLI" AcmeRegisterAccount >/dev/null
+            "$SACLI" AcmeRequestCertificate
+
+            CERT_PEM="$("$SACLI" ConfigQuery 2>/dev/null | grep cs.cert | cut -d '"' -f 4 | sed 's/\\n/\n/g')"
+            if printf '%s' "$CERT_PEM" | openssl x509 -noout -issuer 2>/dev/null | grep -q "Let's Encrypt" \
+              && printf '%s' "$CERT_PEM" | openssl x509 -noout -ext subjectAltName 2>/dev/null | grep -q "IP Address:$${PUBLIC_IP}"; then
+                ACME_OK=true
+                break
+            fi
+            echo "Let's Encrypt attempt $${i}/5 failed; waiting for the network, then retrying."
+            for j in $(seq 1 12); do
+                acme_reachable && break
+                sleep 5
+            done
+        done
+
+        if $ACME_OK; then
+            echo "Access Server is configured with a Let's Encrypt certificate for $${PUBLIC_IP}."
+        else
+            echo "Let's Encrypt certificate request failed after 5 attempts; self-signed certificate may still be active."
+        fi
+    fi
+    %{ endif ~}

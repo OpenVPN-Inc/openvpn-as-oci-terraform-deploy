@@ -10,6 +10,11 @@ locals {
 
   compute_image_id = var.deployment_mode == "ubuntu" ? data.oci_core_images.ubuntu[0].images[0].id : var.mp_listing_resource_id
 
+  # One cloud-init script per deployment_mode, so the Marketplace artifact
+  # carries no installer code. The name is limited to two values by the
+  # validation on var.deployment_mode.
+  cloud_config_file = "cloud-config-${var.deployment_mode}.yaml"
+
   mp_listing_resource_version = "AS_${var.as_version}"
 
   # A number rather than a bool so count can consume it directly.

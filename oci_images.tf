@@ -1,5 +1,5 @@
 # Replication manifest expected by Oracle Marketplace tooling. Values are for
-# package AS_3.2.3, same image as var.mp_listing_resource_id. compatible_shapes
+# package AS_3.2.4, same image as var.mp_listing_resource_id. compatible_shapes
 # comes from `oci compute image-shape-compatibility-entry list`. Ignore the
 # listing's own "compatible-architectures: ARM" metadata, it is wrong.
 variable "marketplace_source_images" {
@@ -10,12 +10,11 @@ variable "marketplace_source_images" {
   }))
   default = {
     main_mktpl_image = {
-      ocid                  = "ocid1.image.oc1..aaaaaaaas2xmsefphlbk2lg37qpacrvwhw77iksq7ibtc3sp7qpkw37ipqeq"
+      ocid                  = "ocid1.image.oc1..aaaaaaaabtqzszfvn6njyrt2anojfq2g33eretq2fo7hx4ambi6bsqiylovq"
       is_pricing_associated = false
       compatible_shapes = [
         "VM.DenseIO.E4.Flex",
         "VM.DenseIO.E5.Flex",
-        "VM.DenseIO.E6.Ax.Flex",
         "VM.DenseIO2.16",
         "VM.DenseIO2.24",
         "VM.DenseIO2.8",
@@ -25,13 +24,12 @@ variable "marketplace_source_images" {
         "VM.GPU.A100.40G.2",
         "VM.GPU.A100.40G.4",
         "VM.GPU.A100.B40G.1",
+        "VM.GPU2.1",
+        "VM.GPU3.1",
+        "VM.GPU3.2",
+        "VM.GPU3.4",
         "VM.Optimized3.Flex",
-        "VM.Standard.A1.Flex",
-        "VM.Standard.A2.Flex",
-        "VM.Standard.A4.Ax.Flex",
-        "VM.Standard.A4.Flex",
         "VM.Standard.AMD.Generic",
-        "VM.Standard.Ampere.Generic",
         "VM.Standard.B1.1",
         "VM.Standard.B1.16",
         "VM.Standard.B1.2",
@@ -62,12 +60,9 @@ variable "marketplace_source_images" {
         "VM.Standard2.8",
         "VM.Standard3.Flex",
         "VM.Standard4.Ax.Flex",
-        "BM.Standard.A1.160",
-        "BM.DenseIO.A4.Ax.72",
-        "BM.Standard.A4.48",
-        "BM.Standard.A4.Ax.48",
         "BM.Standard.E2.64",
         "BM.Standard.E3.128",
+        "BM.GPU4.8",
         "BM.Standard.E4.128",
         "BM.DenseIO.E4.128",
         "BM.DenseIO.E5.128",
@@ -79,7 +74,11 @@ variable "marketplace_source_images" {
         "BM.Standard4.Ax.120",
         "BM.Standard1.36",
         "BM.Standard.B1.44",
+        "BM.GPU2.2",
+        "BM.HPC2.36",
         "BM.Standard2.52",
+        "BM.GPU3.8",
+        "BM.DenseIO2.52",
         "BM.Optimized3.36",
         "BM.Standard3.64",
         "BM.GPU.A10.4",

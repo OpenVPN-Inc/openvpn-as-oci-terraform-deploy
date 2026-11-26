@@ -174,8 +174,8 @@ variable "enable_letsencrypt" {
 # oci_images.tf). See README.md.
 variable "as_version" {
   type        = string
-  description = "OpenVPN Access Server version to install, e.g. 3.2.3."
-  default     = "3.2.3"
+  description = "OpenVPN Access Server version to install, e.g. 3.2.4."
+  default     = "3.2.4"
 }
 
 # ---- Marketplace image (hidden group in schema.yaml: not meant for end-user editing) ----
@@ -200,5 +200,5 @@ variable "mp_listing_id" {
 variable "mp_listing_resource_id" {
   description = "OCID of the Marketplace image for the current region."
   type        = string
-  default     = "ocid1.image.oc1..aaaaaaaas2xmsefphlbk2lg37qpacrvwhw77iksq7ibtc3sp7qpkw37ipqeq"
+  default     = "ocid1.image.oc1..aaaaaaaabtqzszfvn6njyrt2anojfq2g33eretq2fo7hx4ambi6bsqiylovq"
 }
