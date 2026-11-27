@@ -277,7 +277,7 @@ variables:
       compartmentId: compartment_ocid
       vcnId: existing_vcn_id
       hidePublicSubnet: false
-      hidePrivateSubnet: false
+      hidePrivateSubnet: true
       hideRegionalSubnet: false
       hideAdSubnet: false
     visible:
@@ -442,7 +442,7 @@ outputs:
     title: Admin username
 
   admin_password:
-    type: string
+    type: copyableString
     title: Admin password
     sensitive: true
 
