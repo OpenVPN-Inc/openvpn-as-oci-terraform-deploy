@@ -169,6 +169,11 @@ variable "activation_key" {
   description = "Optional Access Server activation (subscription) key. Leave empty to use the key baked into the Marketplace image. Must not contain $, backticks or double quotes."
   default     = ""
   sensitive   = true
+
+  validation {
+    condition     = can(regex("^$|^(?:[A-Za-z0-9+/]{4}){24,240}(?:[A-Za-z0-9+/]{4}|[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)$", var.activation_key))
+    error_message = "activation_key must be empty or a base64 string (no spaces or line breaks)."
+  }
 }
 
 variable "enable_letsencrypt" {
