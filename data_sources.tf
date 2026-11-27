@@ -9,7 +9,7 @@ data "oci_core_images" "ubuntu" {
   count                    = var.deployment_mode == "ubuntu" ? 1 : 0
   compartment_id           = var.compartment_ocid
   operating_system         = "Canonical Ubuntu"
-  operating_system_version = "24.04 Minimal"
+  operating_system_version = "26.04 Minimal"
   # Not filtering by 'shape' here: OCI's shape-filtered image listing only
   # returns Oracle's "recommended" catalog entries, which excludes the
   # Minimal variant even on shapes it is compatible with (verified via
@@ -22,7 +22,7 @@ data "oci_core_images" "ubuntu" {
   # keep only the x86_64 Minimal image (no "-aarch64-" in the name).
   filter {
     name   = "display_name"
-    values = ["^Canonical-Ubuntu-24\\.04-Minimal-\\d{4}\\.\\d{2}\\.\\d{2}-\\d+$"]
+    values = ["^Canonical-Ubuntu-26\\.04-Minimal-\\d{4}\\.\\d{2}\\.\\d{2}-\\d+$"]
     regex  = true
   }
 }

@@ -1,6 +1,6 @@
 resource "random_password" "admin" {
   length           = 12
-  override_special = "!@#$%^&*()-_=+"
+  override_special = "!@#%^&*()-_=+"
 }
 
 resource "oci_core_instance" "this" {
@@ -29,7 +29,7 @@ resource "oci_core_instance" "this" {
 
   metadata = {
     ssh_authorized_keys = var.ssh_authorized_key
-    user_data = base64encode(templatefile("${path.module}/scripts/cloud-config.yaml", {
+    user_data = base64encode(templatefile("${path.module}/scripts/${local.cloud_config_file}", {
       admin_user         = var.admin_user
       admin_password     = local.admin_password
       enable_letsencrypt = var.enable_letsencrypt
