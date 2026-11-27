@@ -113,12 +113,12 @@ runcmd:
     fi
     %{ endif ~}
 
-    # Activation (subscription) key.
+    # Activation (subscription) key. Same flow as the Vultr vendor-data script.
     # 1. Load the key given in the stack, if any.
-    # 2. If none was given, or it did not activate, load the key baked into the
-    #    Marketplace image (the file is absent on the ubuntu path).
+    # 2. If none was given, or it did not activate, load the built-in
+    #    zero-connection key (same key as clouds/subscriptions/oracle-zero).
+    ZERO_KEY='ewogICJub25jZSI6ICIzRjJBQTQ2RkFGMkNGRDVCOTRFN0M5RUE1RkIzMzgxRDE2RjkxREJBRkQyNDgwMzk5QzcxMDBERDcwREZERjE0IiwKICAic3Via2V5IjogIkRPTk9UUkVNT1ZFcE9UZEdNRmRLR09pX09SQUNMRVpFUk9DT05OZlRRX2U4YWI0Nzc2YmIyZGRiZjJkMDUwZjEzNmM2OTNkY2I5M2I4ZDUzZTQiLAogICJpYXQiOiAxNzkyMDY3OTk3Cn0='
     ACTIVATION_KEY="$(printf '%s' "${activation_key}" | tr -d '[:space:]')"
-    IMAGE_KEY_FILE="/etc/openvpn-as/subscription.key"
 
     subscription_not_configured() {
         "$SACLI" SubscriptionStatus 2>/dev/null | grep -qE "'state'[[:space:]]*:[[:space:]]*'NOT_CONFIGURED'"
@@ -126,21 +126,16 @@ runcmd:
 
     wait_for_as '"subscription": "on"'
 
-    USED_KEY="none"
+    USED_KEY="zero"
     if [ -n "$ACTIVATION_KEY" ]; then
         "$SACLI" -v "$ACTIVATION_KEY" loadsubscription >/dev/null 2>&1
         USED_KEY="user"
     fi
     if [ -z "$ACTIVATION_KEY" ] || subscription_not_configured; then
-        if [ -f "$IMAGE_KEY_FILE" ]; then
-            if [ -n "$ACTIVATION_KEY" ]; then
-                echo "Activation key did not activate the subscription; applying the image key."
-            fi
-            "$SACLI" -v "$(cat "$IMAGE_KEY_FILE")" loadsubscription >/dev/null
-            USED_KEY="image"
-        else
-            USED_KEY="none"
-            echo "No usable activation key and no image key file; leaving the subscription unconfigured."
+        if [ -n "$ACTIVATION_KEY" ]; then
+            echo "Activation key did not activate the subscription; applying the zero subscription."
         fi
+        "$SACLI" -v "$ZERO_KEY" loadsubscription >/dev/null
+        USED_KEY="zero"
     fi
     echo "Subscription applied: $USED_KEY key."

@@ -1,37 +1,22 @@
 #cloud-config
 # deployment_type=iac
-# Used when deployment_mode = "ubuntu": the instance is a stock Ubuntu image, so
-# this script installs Access Server from packages.openvpn.net and then
-# configures it. The Marketplace path uses cloud-config-marketplace.yaml
-# instead. The sacli configuration below must stay in step with that file.
+# Used when deployment_mode = "ubuntu": installs Access Server on a stock Ubuntu
+# image, then configures it. The sacli part must match cloud-config-marketplace.yaml.
 runcmd:
   - |
-    # as.conf is created by ovpn-init (and by the installer, which runs it), so
-    # its absence is what "not yet initialized" means. Guards against re-runs.
+    # as.conf exists only after Access Server is initialized. Skip on re-runs.
     if [ -f /usr/local/openvpn_as/etc/as.conf ]; then
         exit 0
     fi
 
-    # Oracle's Ubuntu-based images ship a host-level iptables/nftables ruleset
-    # (see /etc/iptables/rules.v4) that, by default, only allows inbound SSH and
-    # rejects everything else - defense in depth on top of the NSG. Access Server
-    # creates its own separate nftables tables
-    # to manage the VPN ports (943/443/1194) and NATs 443/1194 to its internal
-    # daemon ports in PREROUTING, which runs before this host ruleset's
-    # INPUT/FORWARD chains ever see the original port - so poking holes for
-    # 443/943/1194 specifically here would not work anyway. The NSG (configured
-    # by this module's enable_tcp_*/enable_udp_* variables) and Access Server's
-    # own firewall, created fresh on every service start, are already the real
-    # gatekeepers, so just clear Oracle's default ruleset rather than trying to
-    # mirror its internal NAT targets.
+    # Oracle's default host firewall only allows SSH. Access Server NATs the VPN
+    # ports before that firewall sees them, so opening ports here would not help.
+    # The NSG and Access Server's own firewall already control access, so clear it.
     nft flush ruleset
     systemctl disable netfilter-persistent
 
-    # Wait for the network services before configuring anything. First wait for
-    # network-online.target, then for a default route, because the Let's
-    # Encrypt request later needs working outbound network. cloud-init normally
-    # starts after network-online.target, so these loops usually pass at once;
-    # the lines they print show in cloud-init-output.log if they ever do not.
+    # Wait for the network (needed for downloads and Let's Encrypt).
+    # Usually passes at once. The lines printed show in cloud-init-output.log.
     for i in $(seq 1 60); do
         systemctl is-active --quiet network-online.target && break
         sleep 2
@@ -43,19 +28,14 @@ runcmd:
     done
     echo "default route: $(ip -4 route show default | head -n1)"
 
-    # cloud-init's apt module rewrites the package mirror to OCI's regional
-    # one (e.g. iad-ad-1.clouds.archive.ubuntu.com) based on instance
-    # metadata, and DNS/networking can still be settling in the first
-    # moments after boot. Wait for that rewrite before installing anything,
-    # rather than racing it and failing outbound package/installer fetches.
+    # Wait until cloud-init switches apt to OCI's regional mirror, so package
+    # downloads do not fail early in boot.
     for i in $(seq 1 120); do
         grep -q '\.clouds\.archive\.ubuntu\.com' /etc/apt/sources.list.d/ubuntu.sources 2>/dev/null && break
         sleep 1
     done
 
-    # curl is not present on the Ubuntu Minimal image and is needed to fetch
-    # the installer. Installed here rather than via a top-level cloud-config
-    # 'packages:' key so that all network fetches happen in one visible place.
+    # Ubuntu Minimal has no curl, and the installer download needs it.
     apt-get update -qq
     apt-get install -y curl
 
@@ -71,7 +51,7 @@ runcmd:
 
     SACLI="/usr/local/openvpn_as/scripts/sacli"
 
-    # Wait up to 60s for the API to be on. Optional $1: extra pattern that must also match.
+    # Wait up to 60s for the API. Optional $1: extra pattern the status must match.
     wait_for_as() {
         local status
         for _ in $(seq 1 60); do
@@ -85,15 +65,8 @@ runcmd:
 
     wait_for_as
 
-    # OCI's IMDS (169.254.169.254/opc/v2/vnics/) only reports a "publicIp"
-    # field for a RESERVED public IP - it stays absent for an ephemeral one
-    # even though the instance is genuinely reachable on it, so it can't be
-    # used as a reliable source here for both use_static_public_ip paths.
-    # "sacli IP" asks Access Server itself, which works for either case.
-    # A RESERVED public IP is also attached by Terraform AFTER the instance
-    # is created, so at first boot Access Server may not see it yet. Poll
-    # for up to 5 minutes rather than reading once and giving up, otherwise
-    # host.name stays unset and Let's Encrypt is silently skipped.
+    # Get the public IP from "sacli IP" (OCI's metadata service does not report
+    # an ephemeral IP). A reserved IP is attached after boot, so poll up to 5 min.
     PUBLIC_IP=""
     PUBLIC_IP_VALID=false
     for i in $(seq 1 60); do
@@ -128,11 +101,9 @@ runcmd:
 
     %{ if enable_letsencrypt ~}
     if $PUBLIC_IP_VALID; then
-        # In the first seconds after boot DNS can return only the IPv6 address of
-        # the ACME server, which this VCN cannot reach ("Network is unreachable",
-        # Errno 101). Wait until the server is reachable by name, then retry the
-        # request in case it still fails. Success is judged by the certificate
-        # check below, not by the exit code of sacli.
+        # Early in boot DNS may return only an IPv6 address for the ACME server
+        # (Errno 101). Wait until it is reachable, then retry up to 5 times.
+        # Success is judged by the certificate check, not by the sacli exit code.
         acme_reachable() {
             timeout 3 bash -c 'exec 3<>/dev/tcp/acme-v02.api.letsencrypt.org/443' 2>/dev/null
         }
@@ -167,12 +138,10 @@ runcmd:
     fi
     %{ endif ~}
 
-    # Activation (subscription) key. Same flow as the Vultr vendor-data script.
-    # 1. Load the key given in the stack, if any.
-    # 2. If none was given, or it did not activate, load the key baked into the
-    #    Marketplace image (the file is absent on the ubuntu path).
+    # Activation key: load the key from the stack. If none is given or it does not
+    # activate, load the built-in zero-connection key (clouds/subscriptions/oracle-zero).
+    ZERO_KEY='ewogICJub25jZSI6ICIzRjJBQTQ2RkFGMkNGRDVCOTRFN0M5RUE1RkIzMzgxRDE2RjkxREJBRkQyNDgwMzk5QzcxMDBERDcwREZERjE0IiwKICAic3Via2V5IjogIkRPTk9UUkVNT1ZFcE9UZEdNRmRLR09pX09SQUNMRVpFUk9DT05OZlRRX2U4YWI0Nzc2YmIyZGRiZjJkMDUwZjEzNmM2OTNkY2I5M2I4ZDUzZTQiLAogICJpYXQiOiAxNzkyMDY3OTk3Cn0='
     ACTIVATION_KEY="$(printf '%s' "${activation_key}" | tr -d '[:space:]')"
-    IMAGE_KEY_FILE="/etc/openvpn-as/subscription.key"
 
     subscription_not_configured() {
         "$SACLI" SubscriptionStatus 2>/dev/null | grep -qE "'state'[[:space:]]*:[[:space:]]*'NOT_CONFIGURED'"
@@ -180,21 +149,16 @@ runcmd:
 
     wait_for_as '"subscription": "on"'
 
-    USED_KEY="none"
+    USED_KEY="zero"
     if [ -n "$ACTIVATION_KEY" ]; then
         "$SACLI" -v "$ACTIVATION_KEY" loadsubscription >/dev/null 2>&1
         USED_KEY="user"
     fi
     if [ -z "$ACTIVATION_KEY" ] || subscription_not_configured; then
-        if [ -f "$IMAGE_KEY_FILE" ]; then
-            if [ -n "$ACTIVATION_KEY" ]; then
-                echo "Activation key did not activate the subscription; applying the image key."
-            fi
-            "$SACLI" -v "$(cat "$IMAGE_KEY_FILE")" loadsubscription >/dev/null
-            USED_KEY="image"
-        else
-            USED_KEY="none"
-            echo "No usable activation key and no image key file; leaving the subscription unconfigured."
+        if [ -n "$ACTIVATION_KEY" ]; then
+            echo "Activation key did not activate the subscription; applying the zero subscription."
         fi
+        "$SACLI" -v "$ZERO_KEY" loadsubscription >/dev/null
+        USED_KEY="zero"
     fi
     echo "Subscription applied: $USED_KEY key."
