@@ -21,8 +21,9 @@ locale: "en"
 
 informationalText: >-
   This stack deploys OpenVPN Access Server onto a single Compute instance and configures it at
-  first boot. The generated admin password and, if you leave the SSH key empty, the generated SSH
-  private key are shown in the stack outputs. Click Show next to a value to reveal it.
+  first boot. The generated admin password is shown in the stack outputs. If you leave the SSH key
+  empty, a key pair is generated and the private key is available in the job outputs
+  (ssh_private_key).
 
 instructions: >-
   Open the Admin Web UI from the button above, sign in with the credentials shown in the outputs,
@@ -223,7 +224,7 @@ variables:
     title: SSH public key
     description: >-
       Public SSH key used to access the instance over SSH. Leave empty to have a key pair generated;
-      the private key is then shown in the stack outputs.
+      the private key is then available in the job outputs (ssh_private_key).
     required: false
 
   # ---- networking ----
@@ -408,7 +409,6 @@ outputGroups:
       - admin_url_text
       - admin_user
       - admin_password
-      - ssh_private_key
   - title: "Instance"
     outputs:
       - public_ip
@@ -450,6 +450,9 @@ outputs:
     type: string
     title: SSH private key
     sensitive: true
+    # Not shown in the Console: Resource Manager does not mask it there. Still a
+    # real Terraform output, readable from the job outputs or the CLI.
+    visible: false
 
   public_ip:
     type: copyableString
