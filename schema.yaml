@@ -13,7 +13,7 @@
 
 title: OpenVPN Access Server
 description: Self-hosted business VPN and Zero Trust Network Access from the creators of OpenVPN
-logoUrl: https://as-stable-public.s3.eu-central-1.amazonaws.com/marketplaces/oci/logo.png
+logoUrl: https://raw.githubusercontent.com/OpenVPN-Inc/openvpn-as-oci-terraform-deploy/86a128ad4cd0cdd95a01c7cc02efd7154eb0d060/assets/logo.png
 stackDescription: OpenVPN Access Server on a single Compute instance
 schemaVersion: 1.1.0
 version: "3.2.4"
