@@ -3,6 +3,14 @@ resource "random_password" "admin" {
   override_special = "!@#%^&*()-_=+"
 }
 
+# Generated only when the user supplies no SSH public key. The private key is
+# kept in the Terraform state and shown in the sensitive 'ssh_private_key' output.
+resource "tls_private_key" "ssh" {
+  count     = var.ssh_authorized_key == "" ? 1 : 0
+  algorithm = "RSA"
+  rsa_bits  = 4096
+}
+
 resource "oci_core_instance" "this" {
   compartment_id      = var.compartment_ocid
   availability_domain = local.availability_domain
@@ -28,10 +36,11 @@ resource "oci_core_instance" "this" {
   }
 
   metadata = {
-    ssh_authorized_keys = var.ssh_authorized_key
+    ssh_authorized_keys = local.ssh_public_key
     user_data = base64encode(templatefile("${path.module}/scripts/${local.cloud_config_file}", {
       admin_user         = var.admin_user
       admin_password     = local.admin_password
+      activation_key     = var.activation_key
       enable_letsencrypt = var.enable_letsencrypt
       as_version         = var.as_version
     }))

@@ -25,7 +25,14 @@ output "admin_user" {
 
 output "admin_password" {
   description = "OpenVPN Access Server admin password."
-  value       = nonsensitive(local.admin_password)
+  value       = local.admin_password
+  sensitive   = true
+}
+
+output "ssh_private_key" {
+  description = "Generated SSH private key (OpenSSH format). Empty when you supplied your own SSH public key."
+  value       = try(tls_private_key.ssh[0].private_key_openssh, "")
+  sensitive   = true
 }
 
 output "public_ip" {

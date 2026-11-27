@@ -57,7 +57,8 @@ variable "boot_volume_size_in_gbs" {
 
 variable "ssh_authorized_key" {
   type        = string
-  description = "SSH public key material (not a key name) to install for instance access."
+  description = "SSH public key material (not a key name) to install for instance access. Leave empty to generate a key pair; the private key is then shown in the 'ssh_private_key' output."
+  default     = ""
 }
 
 # ---- networking ----
@@ -159,6 +160,13 @@ variable "admin_user" {
 variable "admin_password" {
   type        = string
   description = "Password for the OpenVPN Access Server admin account. Leave empty to generate a random password."
+  default     = ""
+  sensitive   = true
+}
+
+variable "activation_key" {
+  type        = string
+  description = "Optional Access Server activation (subscription) key. Leave empty to use the key baked into the Marketplace image. Must not contain $, backticks or double quotes."
   default     = ""
   sensitive   = true
 }

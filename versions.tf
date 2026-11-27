@@ -5,7 +5,7 @@ terraform {
   # equivalent compound "~> 1.5.0, < 1.6") because Resource Manager's zip-upload
   # version parser fails on the comma-separated form ("Invalid Terraform
   # version: .").
-  required_version = "~> 1.5.0"
+  required_version = ">= 1.5.0"
 
   required_providers {
     oci = {
@@ -15,6 +15,10 @@ terraform {
     random = {
       source  = "hashicorp/random"
       version = "~> 3.6"
+    }
+    tls = {
+      source  = "hashicorp/tls"
+      version = "~> 4.0"
     }
   }
 }

@@ -166,3 +166,35 @@ runcmd:
         fi
     fi
     %{ endif ~}
+
+    # Activation (subscription) key. Same flow as the Vultr vendor-data script.
+    # 1. Load the key given in the stack, if any.
+    # 2. If none was given, or it did not activate, load the key baked into the
+    #    Marketplace image (the file is absent on the ubuntu path).
+    ACTIVATION_KEY="$(printf '%s' "${activation_key}" | tr -d '[:space:]')"
+    IMAGE_KEY_FILE="/etc/openvpn-as/subscription.key"
+
+    subscription_not_configured() {
+        "$SACLI" SubscriptionStatus 2>/dev/null | grep -qE "'state'[[:space:]]*:[[:space:]]*'NOT_CONFIGURED'"
+    }
+
+    wait_for_as '"subscription": "on"'
+
+    USED_KEY="none"
+    if [ -n "$ACTIVATION_KEY" ]; then
+        "$SACLI" -v "$ACTIVATION_KEY" loadsubscription >/dev/null 2>&1
+        USED_KEY="user"
+    fi
+    if [ -z "$ACTIVATION_KEY" ] || subscription_not_configured; then
+        if [ -f "$IMAGE_KEY_FILE" ]; then
+            if [ -n "$ACTIVATION_KEY" ]; then
+                echo "Activation key did not activate the subscription; applying the image key."
+            fi
+            "$SACLI" -v "$(cat "$IMAGE_KEY_FILE")" loadsubscription >/dev/null
+            USED_KEY="image"
+        else
+            USED_KEY="none"
+            echo "No usable activation key and no image key file; leaving the subscription unconfigured."
+        fi
+    fi
+    echo "Subscription applied: $USED_KEY key."
